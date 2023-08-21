@@ -17,18 +17,9 @@ import org.bytedeco.ffmpeg.avformat.AVStream;
 import org.bytedeco.ffmpeg.avutil.AVDictionary;
 import org.bytedeco.ffmpeg.avutil.AVFrame;
 import org.bytedeco.javacpp.BytePointer;
-import org.bytedeco.javacpp.IntPointer;
 import org.bytedeco.javacpp.PointerPointer;
 
-import java.nio.ByteBuffer;
-import java.time.LocalDateTime;
-import java.time.LocalTime;
 import java.util.*;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.atomic.AtomicReference;
 
 import static org.bytedeco.ffmpeg.global.avcodec.*;
 import static org.bytedeco.ffmpeg.global.avformat.*;
@@ -68,7 +59,9 @@ public class RTMPToFFTAAC extends Application{
 
         AVFormatContext formatContext = new AVFormatContext(options);
 //        String RTMPAddress = "rtmp://192.168.100.25:1935/rtmp_live/ch17";
-        String RTMPAddress = "rtmp://192.168.100.150:1935/hlsram/live0";
+//        String RTMPAddress = "rtmp://192.168.100.170:1935/hlsram/live10";
+//        String RTMPAddress = "rtmp://dev2.idmakers.cn:1935/hlsram/live10";
+        String RTMPAddress = "rtmp://192.168.100.121:1935/live/str1";
         int ret = avformat_open_input(formatContext, RTMPAddress, null, options);
         if (ret < 0) {
             // 打开输入流失败
@@ -94,6 +87,7 @@ public class RTMPToFFTAAC extends Application{
             throw new Exception("没有找到音频流");
         }
         AVCodecParameters codecParameters = formatContext.streams(audioStreamIndex).codecpar();
+        printParams(codecParameters);
         int sampleRate = codecParameters.sample_rate();
         int channels = codecParameters.channels();
         AVCodec codec = avcodec_find_decoder(codecParameters.codec_id());
@@ -101,6 +95,7 @@ public class RTMPToFFTAAC extends Application{
             // 找不到解码器
             throw new Exception("找不到解码器");
         }
+        System.out.println(codec.long_name().getString());
         AVCodecContext codecContext = avcodec_alloc_context3(codec);
         if (codecContext == null) {
             // 分配解码器上下文失败
@@ -136,12 +131,16 @@ public class RTMPToFFTAAC extends Application{
                         throw new Exception("从解码器接收帧失败");
                     }
 
-//                    int numSamples = frame.nb_samples(); //1024
-//                    int numChannels = av_get_channel_layout_nb_channels(frame.channel_layout());//2
-//                    int sampleSize = av_get_bytes_per_sample(frame.format());//4
-                    int numSamples = 1024; //1024
-                    int numChannels = 2;//2
-                    int sampleSize = 4;//4
+                    int numSamples = frame.nb_samples(); //1024
+                    int numChannels = av_get_channel_layout_nb_channels(frame.channel_layout());//2
+                    int sampleSize = av_get_bytes_per_sample(frame.format());//4
+//                    System.out.println("frame numSamples: " + numSamples);
+//                    System.out.println("frame numChannels: " + numChannels);
+//                    System.out.println("frame sampleSize: " + sampleSize);
+
+//                    int numSamples = 1024; //1024
+//                    int numChannels = 2;//2
+//                    int sampleSize = 4;//4
 
 
                     // 将多个音频帧合并为一个更大的音频帧
@@ -190,6 +189,42 @@ public class RTMPToFFTAAC extends Application{
             av_packet_unref(packet);
         }
     }
+
+    private static void printParams(AVCodecParameters codecParameters) {
+        int codecType = codecParameters.codec_type();
+        int codecId = codecParameters.codec_id();
+        int sampleRate = codecParameters.sample_rate();
+        int channels = codecParameters.channels();
+        long channelLayout = codecParameters.channel_layout();
+        long bitRate = codecParameters.bit_rate();
+        int frameSize = codecParameters.frame_size();
+        int bitsPerCodedSample = codecParameters.bits_per_coded_sample();
+        int bitsPerRawSample = codecParameters.bits_per_raw_sample();
+        int profile = codecParameters.profile();
+        int level = codecParameters.level();
+        int width = codecParameters.width();
+        int height = codecParameters.height();
+
+        int numDelay = codecParameters.initial_padding();
+        int denDelay = codecParameters.trailing_padding();
+
+
+        System.out.println("Codec Type: " + codecType);
+        System.out.println("Codec ID: " + codecId);
+        System.out.println(" Rate: " + sampleRate);
+        System.out.println("Channels: " + channels);
+        System.out.println("Channel Layout: " + channelLayout);
+        System.out.println("Bit Rate: " + bitRate);
+        System.out.println("Frame Size: " + frameSize);
+        System.out.println("Bits Per Coded Sample: " + bitsPerCodedSample);
+        System.out.println("Bits Per Raw Sample: " + bitsPerRawSample);
+        System.out.println("Profile: " + profile);
+        System.out.println("Level: " + level);
+        System.out.println("Width: " + width);
+        System.out.println("Height: " + height);
+        System.out.println("Delay: " + (double) numDelay / denDelay);
+    }
+
 
     public static void sendAudioDataToAudioEngine(byte[] pcmData, XYChart.Series<Number, Number> series) {
         double[] audioData = applyHammingWindow(pcmData);

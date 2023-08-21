@@ -114,7 +114,7 @@ public class FfmpegDecoder3 extends Application implements Runnable {
                 String[] cmd = {
                         "C:\\Develop\\Ffmpeg\\bin\\ffmpeg.exe",
                         "-i", // 输入流为标准输入
-                        "rtmp://192.168.100.150:1935/hlsram/live5",
+                        "rtmp://192.168.100.53:1935/hlsram/live5",
                         "-vn", // 覆盖输出文件
                         "-acodec", "pcm_s16le", // 音频解码器
                         "-ac", "2", // 声道数量

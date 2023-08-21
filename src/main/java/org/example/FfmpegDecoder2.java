@@ -24,7 +24,7 @@ public class FfmpegDecoder2 extends Application implements Runnable {
     private static final int NUM_FRAMES = 25;
     private static final int NUM_SAMPLES = 1024;
     private static final int NUM_CHANNELS = 2;
-    private static final int SAMPLE_SIZE = 4;
+    private static final int SAMPLE_SIZE = 2;
     private static final int BYTES_PER_FRAME = NUM_CHANNELS * SAMPLE_SIZE * NUM_SAMPLES;
 
     private static double[] data = {0, 1, 0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
@@ -57,7 +57,7 @@ public class FfmpegDecoder2 extends Application implements Runnable {
 
 
     public static void main(String[] args) {
-//        launch(args);
+        launch(args);
         FfmpegDecoder2 decoder = new FfmpegDecoder2();
         decoder.setRunning(true);
         Thread thread = new Thread(decoder);
@@ -114,7 +114,8 @@ public class FfmpegDecoder2 extends Application implements Runnable {
                 String[] cmd = {
                         "C:\\Develop\\Ffmpeg\\bin\\ffmpeg.exe",
                         "-i", // 输入流为标准输入
-                        "rtmp://192.168.100.150:1935/hlsram/live4",
+                        "rtmp://192.168.100.58:1935/hlsram/live8",
+//                        "rtmp://192.168.100.121:1935/live/str1",
                         "-vn", // 覆盖输出文件
                         "-acodec", "pcm_s16le", // 音频解码器
                         "-ac", "2", // 声道数量
@@ -154,7 +155,7 @@ public class FfmpegDecoder2 extends Application implements Runnable {
 
         while (in.read(buffer) != -1) {
 
-            sendAudioDataToAudioEngine(buffer, null, 257);
+            sendAudioDataToAudioEngine(buffer, series, 257);
 
         }
     }
@@ -259,6 +260,11 @@ public class FfmpegDecoder2 extends Application implements Runnable {
 
     public static void sendAudioDataToAudioEngine(byte[] pcmData, XYChart.Series<Number, Number> series, int endIndex) {
         double[] audioData = applyHammingWindow(pcmData);
+
+
+        double[] tempData = Arrays.copyOfRange(audioData, 0, audioData.length);
+//        tempData = smooth(tempData, 10);
+
         if (hasDCBias(audioData)) {
             audioData = removeDCBias(audioData);
         }
@@ -268,15 +274,17 @@ public class FfmpegDecoder2 extends Application implements Runnable {
         double[] fftData = audioFFT.getFFTData();
         double[] amplitude = audioFFT.getFFTAmplitude4SampleSize();
 
+//        tempData = normalizeFFTData(tempData);
         amplitude = audioFFT.normalizeAmplitude(amplitude);
 
-        amplitude = meanFilter(amplitude, 3);
+//        amplitude = meanFilter(amplitude, 3);
 
-        amplitude = compress(amplitude, 10);
+//        amplitude = compress(amplitude, 10);
 
-        amplitude = smooth(amplitude, 30);
+//        amplitude = smooth(amplitude, 30);
 
-        double[] tempData = Arrays.copyOfRange(amplitude, 10, 70);
+//        double[] tempData = Arrays.copyOfRange(amplitude, 10, 70);
+//        double[] tempData = Arrays.copyOfRange(amplitude, 0, amplitude.length);
 
         if (containsNaN(tempData)) {
             return;
@@ -334,6 +342,7 @@ public class FfmpegDecoder2 extends Application implements Runnable {
         }
 
         return hammingWindow;
+//        return pcmDataDouble;
     }
 
 
@@ -452,6 +461,37 @@ public class FfmpegDecoder2 extends Application implements Runnable {
 
 //        System.out.println("平均值===========" + sum / data.length);
         return seriesData;
+    }
+
+    private static ObservableList<XYChart.Data<Number, Number>> getSeriesDataFft() {
+        ObservableList<XYChart.Data<Number, Number>> seriesData = FXCollections.observableArrayList();
+        double sum = 0;
+
+        // 取data的前半部分并且绘制其绝对值
+        int halfLength = data.length / 2;
+        for (int i = 0; i < halfLength; i++) {
+            double magnitude = Math.abs(data[i]);
+
+            double frequency = (double)i * 48000 / data.length;
+            XYChart.Data<Number, Number> dataPoint = new XYChart.Data<>(frequency, magnitude);
+            seriesData.add(dataPoint);
+            sum += magnitude;
+        }
+
+        // 输出平均值
+//        System.out.println("Average magnitude: " + sum / halfLength);
+        return seriesData;
+    }
+
+    private static double[] normalizeFFTData(double[] fftData) {
+        double maxMagnitude = Arrays.stream(fftData).max().orElse(1.0);
+
+        double[] normalizedData = new double[fftData.length];
+        for (int i = 0; i < fftData.length; i++) {
+            normalizedData[i] = fftData[i] / maxMagnitude;
+        }
+
+        return normalizedData;
     }
 
 }

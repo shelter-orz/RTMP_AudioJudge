@@ -63,7 +63,7 @@ public class RTMPToFFTAACForExe extends Application{
 
         AVFormatContext formatContext = new AVFormatContext(options);
 //        String RTMPAddress = "rtmp://192.168.100.25:1935/rtmp_live/ch17";
-        String RTMPAddress = "rtmp://192.168.100.150:1935/hlsram/live0";
+        String RTMPAddress = "rtmp://192.168.100.170:1935/hlsram/live30";
         int ret = avformat_open_input(formatContext, RTMPAddress, null, options);
         if (ret < 0) {
             // 打开输入流失败

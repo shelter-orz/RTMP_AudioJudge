@@ -75,7 +75,7 @@ public class FfmpegDecoder2TsFile extends Application implements Runnable {
                 String[] cmd = {
                         "C:\\Develop\\Ffmpeg\\bin\\ffmpeg.exe",
                         "-i", // 输入流为标准输入
-                        "C:\\资料\\青海回听监测\\audio\\live0-08141727.ts",
+                        "C:\\资料\\青海回听监测\\audio\\ts(0.13).ts",
 //                        "rtmp://192.168.100.121:1935/live/str1",
                         "-vn", // 覆盖输出文件
                         "-acodec", "pcm_s16le", // 音频解码器

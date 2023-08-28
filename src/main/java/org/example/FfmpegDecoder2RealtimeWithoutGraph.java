@@ -44,7 +44,7 @@ public class FfmpegDecoder2RealtimeWithoutGraph implements Runnable {
                 String[] cmd = {
                         "C:\\Develop\\Ffmpeg\\bin\\ffmpeg.exe",
                         "-i", // 输入流为标准输入
-                        "rtmp://192.168.100.168:1935/hlsram/live0",
+                        "rtmp://192.168.100.53:1935/hlsram/live0",
 //                        "rtmp://dev2.idmakers.cn:1935/hlsram/live0",
 //                        "rtmp://192.168.100.121:1935/live/str1",
 //                        "C:\\资料\\青海回听监测\\audio\\t1(0.83).ts",

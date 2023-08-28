@@ -49,7 +49,7 @@ public class FfmpegDecoder2Realtime extends Application implements Runnable {
                 String[] cmd = {
                         "C:\\Develop\\Ffmpeg\\bin\\ffmpeg.exe",
                         "-i", // 输入流为标准输入
-                        "rtmp://192.168.100.168:1935/hlsram/live0",
+                        "rtmp://192.168.100.53:1935/hlsram/live0",
 //                        "rtmp://192.168.100.121:1935/live/str1",
 //                        "C:\\资料\\青海回听监测\\audio\\t1(0.83).ts",
                         "-vn", // 覆盖输出文件
@@ -280,10 +280,15 @@ public class FfmpegDecoder2Realtime extends Application implements Runnable {
 
 
 //        1.静音或轻微白噪声：largeDropCounts中所有数据都为0
+
 //        2.少量人声：largeDropCounts中几乎所有数据都为0，少量数据为100以内的数据
+
 //        3.人声：largeDropCounts中大量数据处于0-300之间，少量处于300-500，含较多连续的0，不断浮动，连续的0表明停顿静音
+
 //        × 不同的音乐表现不同4.歌声：largeDropCounts中几乎没有0出现，浮动较大，一段时间内所有数据处于0-300之间浮动无规律
+
 //        5.强烈白噪声：largeDropCounts全部处于100以上
+
     public static void countSoundTypes(int[] largeDropCounts){
         int serialZeroCount = 0;
         int zeroCount = 0;

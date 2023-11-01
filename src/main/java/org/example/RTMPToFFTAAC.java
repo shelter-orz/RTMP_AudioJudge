@@ -61,7 +61,7 @@ public class RTMPToFFTAAC extends Application{
 //        String RTMPAddress = "rtmp://192.168.100.25:1935/rtmp_live/ch17";
 //        String RTMPAddress = "rtmp://192.168.100.170:1935/hlsram/live10";
 //        String RTMPAddress = "rtmp://dev2.idmakers.cn:1935/hlsram/live10";
-        String RTMPAddress = "rtmp://192.168.100.121:1935/live/str1";
+        String RTMPAddress = "rtmp://192.168.100.51:1935/live/str1";
         int ret = avformat_open_input(formatContext, RTMPAddress, null, options);
         if (ret < 0) {
             // 打开输入流失败

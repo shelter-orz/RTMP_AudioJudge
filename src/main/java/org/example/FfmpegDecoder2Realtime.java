@@ -759,13 +759,21 @@ public class FfmpegDecoder2Realtime extends Application implements Runnable {
         int overOneHundredAndEightyCount = 0;
         int overOneHundredCount = 0;
         int serialZeroCountForLoop = 0;
+        int zeroToFiftyCount = 0;
+
         for (int largeDropCount : largeDropCounts) {
             if (largeDropCount == 0){
                 zeroCount ++;
+                zeroToFiftyCount ++;
                 zeroToOneHundredCount ++;
                 zeroToThreeHundredCount ++;
                 serialZeroCountForLoop ++;
             }else if (largeDropCount > 0 && largeDropCount <= 100){
+
+                if (largeDropCount <= 50){
+                    zeroToFiftyCount ++;
+                }
+
                 zeroToOneHundredCount ++;
                 zeroToThreeHundredCount ++;
                 if (serialZeroCountForLoop >= 3){
@@ -807,9 +815,11 @@ public class FfmpegDecoder2Realtime extends Application implements Runnable {
         double threeHundredToFiveHundredPercent = 0;
         double overOneHundredAndEightyPercent = 0;
         double overOneHundredPercent = 0;
+        double zeroToFiftyPercent = 0;
 
         int length = largeDropCounts.length;
         zeroPercent = zeroCount  * 1.0/ length;
+        zeroToFiftyPercent = zeroToFiftyCount  * 1.0/ length;
         zeroToOneHundredPercent = zeroToOneHundredCount  * 1.0/ length;
         zeroToThreeHundredPercent = zeroToThreeHundredCount  * 1.0/ length;
         threeHundredToFiveHundredPercent = threeHundredToFiveHundredCount  * 1.0/ length;
@@ -817,7 +827,7 @@ public class FfmpegDecoder2Realtime extends Application implements Runnable {
         overOneHundredPercent = overOneHundredCount * 1.0/ length;
 
         long time = System.currentTimeMillis();
-        if (zeroPercent >= 0.95){
+        if (zeroPercent >= 0.95 || zeroToFiftyPercent >= 0.99){
             System.out.println("静音或轻微白噪声");
             result = LocalDateTime.now() + "-----静音或轻微白噪声";
             timeBasedCache.put(time, MUTE_OR_LIGHT_WHITE_NOISE);

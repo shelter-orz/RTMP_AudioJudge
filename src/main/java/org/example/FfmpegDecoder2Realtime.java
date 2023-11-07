@@ -19,6 +19,8 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.*;
@@ -128,6 +130,41 @@ public class FfmpegDecoder2Realtime extends Application implements Runnable {
                 throw new RuntimeException(e);
 
             }
+        }
+    }
+
+    public static class LowPassFilter {
+        private final double alpha;
+        private double state;
+
+        public LowPassFilter(double cutoffFrequency, double dt) {
+            alpha = dt / (dt + 1.0 / (2.0 * Math.PI * cutoffFrequency));
+            state = 0;
+        }
+
+        public short apply(short value) {
+            state = alpha * value + (1.0 - alpha) * state;
+            return (short) state;
+        }
+    }
+
+    static void processPCMData(byte[] pcmData, double cutoffFrequency, double sampleRate) {
+        // Create separate filters for each channel
+        LowPassFilter filter1 = new LowPassFilter(cutoffFrequency, 1/sampleRate);
+        LowPassFilter filter2 = new LowPassFilter(cutoffFrequency, 1/sampleRate);
+
+        ByteBuffer bb = ByteBuffer.wrap(pcmData).order(ByteOrder.LITTLE_ENDIAN);
+
+        for (int i = 0; i < pcmData.length/4; ++i) {
+            short sample1 = bb.getShort();
+            short sample1Filtered = filter1.apply(sample1);
+            bb.position(bb.position() - 2);
+            bb.putShort(sample1Filtered);
+
+            short sample2 = bb.getShort();
+            short sample2Filtered = filter2.apply(sample2);
+            bb.position(bb.position() - 2);
+            bb.putShort(sample2Filtered);
         }
     }
 
@@ -636,6 +673,7 @@ public class FfmpegDecoder2Realtime extends Application implements Runnable {
         gc.stroke();
     }
     public static void sendAudioDataToAudioEngine(byte[] pcmData) {
+//        processPCMData(pcmData, 4000, 1 / 48000.0);
         double[] audioData = applyHammingWindow(pcmData);
 
         double[] tempData = Arrays.copyOfRange(audioData, 0, audioData.length);
@@ -647,6 +685,8 @@ public class FfmpegDecoder2Realtime extends Application implements Runnable {
         if (containsNaN(tempData)) {
             return;
         }
+
+       tempData = meanFilter(tempData, 15);
 
         data = tempData;
 

@@ -2,17 +2,33 @@ package org.example;
 
 import javafx.animation.AnimationTimer;
 import javafx.application.Application;
+import javafx.application.Platform;
+import javafx.embed.swing.SwingNode;
 import javafx.scene.Scene;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
-import javafx.scene.control.*;
+import javafx.scene.control.Button;
+import javafx.scene.control.Label;
+import javafx.scene.control.TextArea;
+import javafx.scene.control.TextField;
 import javafx.scene.layout.Pane;
+import javafx.scene.layout.StackPane;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Line;
 import javafx.scene.text.Font;
 import javafx.scene.text.Text;
 import javafx.stage.Stage;
+import org.jfree.chart.ChartFactory;
+import org.jfree.chart.ChartPanel;
+import org.jfree.chart.JFreeChart;
+import org.jfree.chart.axis.NumberAxis;
+import org.jfree.chart.axis.NumberTickUnit;
+import org.jfree.chart.plot.PlotOrientation;
+import org.jfree.chart.plot.XYPlot;
+import org.jfree.data.xy.XYSeries;
+import org.jfree.data.xy.XYSeriesCollection;
 
+import javax.swing.*;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
@@ -30,7 +46,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.example.PcmAnalyzeResultEnum.*;
 
-public class FfmpegDecoder2Realtime extends Application implements Runnable {
+public class FfmpegDecoderForQinHai extends Application implements Runnable {
     private final int sleepTime = 1000; // 停顿时间
     private static final int NUM_FRAMES = 25;
     private static final int NUM_SAMPLES = 1024;
@@ -42,6 +58,10 @@ public class FfmpegDecoder2Realtime extends Application implements Runnable {
     private static double[] data = {0, 1, 0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
     private static double[] oldData = {0, 1, 0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
+
+    private static ArrayList<byte[]> pcmList = new ArrayList<>();// 你的PCM数据列表
+    private static ArrayList<Double> diffList = new ArrayList<>(); // 差异结果列表
+
     private static final int[] largeDropCounts = new int[NUM_FRAMES];
     private static int largeDropCountsIndex = 0;
 
@@ -49,10 +69,18 @@ public class FfmpegDecoder2Realtime extends Application implements Runnable {
     private static int RMSEIndex = 0;
     private static String result = null;
     private static String lastResult = null;
+    private static String rtmpUrl = "rtmp://192.168.8.147:1935/hlsram/live21";
 //    private static String rtmpUrl = "rtmp://192.168.100.170:1935/hlsram/live16";
-    private static String rtmpUrl = "rtmp://192.168.8.147:1935/hlsram/live33";
+//    rtmp://192.168.100.170:1935/hlsram/live16
+//    rtmp://123.112.214.255/live/3000122134_0_2_17740000
+//    rtmp://123.112.214.255/live/3000122134_0_4_747000
+//    rtmp://123.112.214.255/live/3000122134_0_0_15000000
+//    rtmp://123.112.214.255/live/3000122134_0_1_6046000
+//    rtmp://123.112.214.255/live/3000122134_0_6_1008000
 
     private static String ffmpegLocation = "D:\\软件\\测试工具\\Ffmpeg\\bin\\ffmpeg.exe";
+//    private static String ffmpegLocation = "C:\\Develop\\Ffmpeg\\bin\\ffmpeg.exe";
+
     private static String potPlayerPath = "C:\\工具\\PotPlayer\\PotPlayer64\\PotPlayerMini64.exe";
 
     private static TimeBasedCache<Long, PcmAnalyzeResultEnum> timeBasedCache = new TimeBasedCache<>(5, TimeUnit.MINUTES);
@@ -62,16 +90,31 @@ public class FfmpegDecoder2Realtime extends Application implements Runnable {
 
 
 
+
+
+    private static double sampleRate = 48000;
+    private static int fftSize;
+    private static volatile double[] magnitudes;
+    private static volatile double[] frequencies;
+
+    public static double[] getMagnitudes() {
+        return magnitudes;
+    }
+
+    public static double[] getFrequencies() {
+        return frequencies;
+    }
+
     public static void setRtmpUrl(String rtmpUrl) {
-        FfmpegDecoder2Realtime.rtmpUrl = rtmpUrl;
+        FfmpegDecoderForQinHai.rtmpUrl = rtmpUrl;
     }
 
     public static void setFfmpegLocation(String ffmpegLocation) {
-        FfmpegDecoder2Realtime.ffmpegLocation = ffmpegLocation;
+        FfmpegDecoderForQinHai.ffmpegLocation = ffmpegLocation;
     }
 
     public static void setPotPlayerPath(String potPlayerPath) {
-        FfmpegDecoder2Realtime.potPlayerPath = potPlayerPath;
+        FfmpegDecoderForQinHai.potPlayerPath = potPlayerPath;
     }
 
     public void stopRunning() {
@@ -79,8 +122,71 @@ public class FfmpegDecoder2Realtime extends Application implements Runnable {
     }
     public static void main(String[] args) {
         launch(args);
-
     }
+
+    private XYSeries series = new XYSeries("FFT Analysis");
+    private XYSeriesCollection dataset = new XYSeriesCollection(series);
+
+    @Override
+    public void start(Stage stage) {
+        Thread thread = new Thread(this);
+        thread.start();
+        final SwingNode chartSwingNode = new SwingNode();
+        createChart(chartSwingNode);
+
+        StackPane pane = new StackPane();
+        pane.getChildren().add(chartSwingNode);
+
+        stage.setTitle("JavaFX / JFreeChart Integration");
+        stage.setScene(new Scene(pane, 800, 600));
+        stage.show();
+
+        // Start a new Thread which updates the chart
+        new Thread(() -> {
+            while (true) {
+                try {
+                    Thread.sleep(1000);  // Adjust based on your needs
+
+                    double[] newFrequencies = frequencies;  // Get new frequencies
+                    double[] newMagnitudes = magnitudes;  // Get new magnitudes
+
+                    Platform.runLater(() -> {
+                        series.clear();
+                        for (int i = 0; i < newFrequencies.length; i++) {
+                            series.add(newFrequencies[i], newMagnitudes[i]);
+                        }
+                    });
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+        }).start();
+    }
+
+    private void createChart(final SwingNode swingNode) {
+        SwingUtilities.invokeLater(() -> {
+            // 创建图表
+            JFreeChart chart = ChartFactory.createXYLineChart(
+                    "FFT Results",
+                    "Frequency (Hz)",
+                    "Magnitude",
+                    dataset,
+                    PlotOrientation.VERTICAL,
+                    true,
+                    true,
+                    false);
+
+            XYPlot plot = chart.getXYPlot();  // Get the plot object from the chart
+            NumberAxis yAxis = (NumberAxis) plot.getRangeAxis();  // Get the y-axis from the plot
+            yAxis.setAutoRangeIncludesZero(false);
+            yAxis.setTickUnit(new NumberTickUnit(0.5));  // Set the interval to 10 or whatever value you want
+            yAxis.setRange(0.0, 30.0);
+
+            ChartPanel chartPanel = new ChartPanel(chart);
+            swingNode.setContent(chartPanel);
+        });
+    }
+
 
     @Override
     public void run() {
@@ -180,374 +286,13 @@ public class FfmpegDecoder2Realtime extends Application implements Runnable {
         byte[] buffer = new byte[BYTES_PER_FRAME];
         while (in.read(buffer) != -1 && running) {
 //            System.out.println(Arrays.toString(buffer));
-            sendAudioDataToAudioEngine(buffer);
+            sendAudioToEngine(buffer);
         }
     }
 
-    FfmpegDecoder2Realtime updateRunnable = null;
+    FfmpegDecoderForQinHai updateRunnable = null;
     Thread updateThread = null;
     Process process = null;
-    @Override
-    public void start(Stage primaryStage) {
-        data = new double[1024];  // Initialise your data with 1024 value
-
-        final Canvas canvas = new Canvas(1024, 600);   // Expanded canvas width for 1024 data points
-        final GraphicsContext gc = canvas.getGraphicsContext2D();
-
-        Pane root = new Pane();
-        root.getChildren().add(canvas);
-
-
-        TextArea consoleOut = new TextArea();  // Create a new textarea to display the output
-        consoleOut.setEditable(false);
-        consoleOut.setLayoutX(1100);
-        consoleOut.setLayoutY(50);
-        consoleOut.setPrefSize(300, 500);
-        consoleOut.setPrefRowCount(30);
-        root.getChildren().add(consoleOut); // Add the textarea to the root pane
-
-//        consoleOut.textProperty().addListener(new ChangeListener<String>() {
-//            @Override
-//            public void changed(ObservableValue<? extends String> observableValue, String oldText, String newText) {
-//                // Limit line count to 10
-//
-//            }
-//        });
-
-        Font font = new Font(8);
-        Label totaolCountLabel = new Label("总量:");
-        totaolCountLabel.setLayoutX(1060); // Adjust these according to your layout
-        totaolCountLabel.setLayoutY(5);
-        totaolCountLabel.setFont(font);
-        root.getChildren().add(totaolCountLabel);
-
-        TextField totalCount = new TextField();
-        totalCount.setLayoutX(1080); // Set positions according to your layout
-        totalCount.setLayoutY(2);
-        totalCount.setPrefSize(30, 8);
-        totalCount.setFont(font);
-        totalCount.setText("0");
-        root.getChildren().add(totalCount);
-
-
-        Label noInfoCountLabel = new Label("无信息:");
-        noInfoCountLabel.setLayoutX(1120); // Adjust these according to your layout
-        noInfoCountLabel.setLayoutY(5);
-        noInfoCountLabel.setFont(font);
-        root.getChildren().add(noInfoCountLabel);
-
-        TextField noInfoCountText = new TextField();
-        noInfoCountText.setLayoutX(1150); // Set positions according to your layout
-        noInfoCountText.setLayoutY(2);
-        noInfoCountText.setPrefSize(30, 8);
-        noInfoCountText.setFont(font);
-        noInfoCountText.setText("0");
-        root.getChildren().add(noInfoCountText);
-
-
-
-        Label littleInfoCountLabel = new Label("少量信息:");
-        littleInfoCountLabel.setLayoutX(1190); // Adjust these according to your layout
-        littleInfoCountLabel.setLayoutY(5);
-        littleInfoCountLabel.setFont(font);
-        root.getChildren().add(littleInfoCountLabel);
-
-        TextField littleInfoText = new TextField();
-        littleInfoText.setLayoutX(1230); // Set positions according to your layout
-        littleInfoText.setLayoutY(2);
-        littleInfoText.setPrefSize(30, 8);
-        littleInfoText.setFont(font);
-        littleInfoText.setText("0");
-        root.getChildren().add(littleInfoText);
-
-
-        Label infoCountLabel = new Label("有信息:");
-        infoCountLabel.setLayoutX(1270); // Adjust these according to your layout
-        infoCountLabel.setLayoutY(5);
-        infoCountLabel.setFont(font);
-        root.getChildren().add(infoCountLabel);
-
-        TextField infoText = new TextField();
-        infoText.setLayoutX(1300); // Set positions according to your layout
-        infoText.setLayoutY(2);
-        infoText.setPrefSize(30, 8);
-        infoText.setFont(font);
-        infoText.setText("0");
-        root.getChildren().add(infoText);
-
-
-        Label scoreLabel = new Label("得分:");
-        scoreLabel.setLayoutX(1060); // Adjust these according to your layout
-        scoreLabel.setLayoutY(23);
-        scoreLabel.setFont(font);
-        root.getChildren().add(scoreLabel);
-
-        TextField score = new TextField();
-        score.setLayoutX(1080); // Set positions according to your layout
-        score.setLayoutY(20);
-        score.setPrefSize(30, 8);
-        score.setFont(font);
-        score.setText("0");
-        root.getChildren().add(score);
-
-
-//
-//        Label continuousInfoLabel = new Label("有信息连续数量:");
-//        continuousInfoLabel.setLayoutX(1220); // Adjust these according to your layout
-//        continuousInfoLabel.setLayoutY(23);
-//        continuousInfoLabel.setFont(font);
-//        root.getChildren().add(continuousInfoLabel);
-//
-//        TextField continuousInfoText = new TextField();
-//        continuousInfoText.setLayoutX(1270); // Set positions according to your layout
-//        continuousInfoText.setLayoutY(20);
-//        continuousInfoText.setPrefSize(30, 8);
-//        continuousInfoText.setFont(font);
-//        continuousInfoText.setText("0");
-//        root.getChildren().add(continuousInfoText);
-//
-//
-//
-//        Label continuousNoInfoOrLittleInfoLabel = new Label("无或少量信息连续数量:");
-//        continuousNoInfoOrLittleInfoLabel.setLayoutX(1120); // Adjust these according to your layout
-//        continuousNoInfoOrLittleInfoLabel.setLayoutY(23);
-//        continuousNoInfoOrLittleInfoLabel.setFont(font);
-//        root.getChildren().add(continuousNoInfoOrLittleInfoLabel);
-//
-//        TextField continuousNoInfoOrLittleInfoText = new TextField();
-//        continuousNoInfoOrLittleInfoText.setLayoutX(1170); // Set positions according to your layout
-//        continuousNoInfoOrLittleInfoText.setLayoutY(20);
-//        continuousNoInfoOrLittleInfoText.setPrefSize(30, 8);
-//        continuousNoInfoOrLittleInfoText.setFont(font);
-//        continuousNoInfoOrLittleInfoText.setText("0");
-//        root.getChildren().add(continuousNoInfoOrLittleInfoText);
-
-
-
-        Label continuousScoreLabel = new Label("连续数量得分:");
-        continuousScoreLabel.setLayoutX(1120); // Adjust these according to your layout
-        continuousScoreLabel.setLayoutY(23);
-        continuousScoreLabel.setFont(font);
-        root.getChildren().add(continuousScoreLabel);
-
-        TextField continuousScoreText = new TextField();
-        continuousScoreText.setLayoutX(1180); // Set positions according to your layout
-        continuousScoreText.setLayoutY(20);
-        continuousScoreText.setPrefSize(30, 8);
-        continuousScoreText.setFont(font);
-        continuousScoreText.setText("0");
-        root.getChildren().add(continuousScoreText);
-//
-//
-//
-//        Label totaolCountLabel = new Label("总量:");
-//        totaolCountLabel.setLayoutX(1200); // Adjust these according to your layout
-//        totaolCountLabel.setLayoutY(5);
-//        totaolCountLabel.setFont(font);
-//        root.getChildren().add(totaolCountLabel);
-//
-//        TextField totalCount = new TextField();
-//        totalCount.setLayoutX(1220); // Set positions according to your layout
-//        totalCount.setLayoutY(2);
-//        totalCount.setPrefSize(30, 8);
-//        totalCount.setFont(font);
-//        totalCount.setText("0");
-//        root.getChildren().add(totalCount);
-
-        new AnimationTimer() {
-            @Override
-            public void handle(long now) {
-                // Draw in the JavaFX Application Thread
-                drawLineGraph(gc, canvas);
-
-
-                if (result != null && !result.equals(lastResult)) {
-                    consoleOut.appendText(result + "\n");
-
-                    freshStatistic(totalCount, noInfoCountText, littleInfoText, infoText, score, continuousScoreText);
-                }
-                String[] lines = consoleOut.getText().split("\n");  // or "\r\n" if you're using that
-                if (lines.length > 30) {
-                    // Remove first line when line count exceeds 10
-                    String newTextLimited = String.join("\n", Arrays.copyOfRange(lines, 1, lines.length));
-                    newTextLimited = newTextLimited + "\n";
-                    consoleOut.setText(newTextLimited);
-                }
-                lastResult = result;
-
-            }
-        }.start();
-
-        // Start a new Thread that will update 'data'
-        updateRunnable = this;
-        updateThread = new Thread(this);
-        updateThread.start();
-
-
-
-        Label nameLabel = new Label("RTMP地址");
-        nameLabel.setLayoutX(600); // Adjust these according to your layout
-        nameLabel.setLayoutY(25);
-        root.getChildren().add(nameLabel);
-
-        TextField inputTextField = new TextField();
-        inputTextField.setLayoutX(660); // Set positions according to your layout
-        inputTextField.setLayoutY(20);
-        inputTextField.setPrefSize(200, 30);
-        inputTextField.setText(rtmpUrl);
-        root.getChildren().add(inputTextField);
-
-        Label ffmpegLabel = new Label("ffmpeg地址");
-        ffmpegLabel.setLayoutX(10); // Adjust these according to your layout
-        ffmpegLabel.setLayoutY(25);
-        root.getChildren().add(ffmpegLabel);
-
-        TextField ffmpeg = new TextField();
-        ffmpeg.setLayoutX(80); // Set positions according to your layout
-        ffmpeg.setLayoutY(20);
-        ffmpeg.setPrefSize(200, 30);
-        ffmpeg.setText(ffmpegLocation);
-        root.getChildren().add(ffmpeg);
-
-        Label potPlayerLabel = new Label("potPlayer地址");
-        potPlayerLabel.setLayoutX(290); // Adjust these according to your layout
-        potPlayerLabel.setLayoutY(25);
-        root.getChildren().add(potPlayerLabel);
-
-        TextField potPlayer = new TextField();
-        potPlayer.setLayoutX(380); // Set positions according to your layout
-        potPlayer.setLayoutY(20);
-        potPlayer.setPrefSize(200, 30);
-        potPlayer.setText(potPlayerPath);
-        root.getChildren().add(potPlayer);
-
-        // Create a button to trigger thread start
-        Button button = new Button("重新分析");
-        button.setLayoutX(880);
-        button.setLayoutY(20);
-        button.setOnAction(e -> {
-            timeBasedCache.clear();
-            if (updateThread != null && updateThread.isAlive()) {
-                updateRunnable.stopRunning();  // Stop the current thread
-
-            }
-            updateRunnable = new FfmpegDecoder2Realtime();  // Create new runnable
-            setRtmpUrl(inputTextField.getText());
-            setFfmpegLocation(ffmpeg.getText());
-            updateThread = new Thread(updateRunnable);  // Store thread reference to control it later
-
-            updateThread.start();  // Start thread
-
-            if (process != null) {  // 如果前一个进程还在运行，就结束它
-                process.destroy();
-            }
-            setPotPlayerPath(potPlayer.getText());
-            if (potPlayerPath != null && !potPlayerPath.isEmpty()){
-                String[] command = { potPlayerPath, rtmpUrl };
-                ProcessBuilder pb = new ProcessBuilder(command);
-
-                // 合并标准错误流和标准输出流
-                pb.redirectErrorStream(true);
-
-                try {
-                    if (process != null) {
-                        process.destroy();
-                    }
-                    process = pb.start();
-
-                    // 在单独的线程中处理子进程的输出流
-                    new Thread(() -> {
-                        BufferedReader inputReader = new BufferedReader(new InputStreamReader(process.getInputStream()));
-                        String line;
-                        try {
-                            while ((line = inputReader.readLine()) != null) {
-                                System.out.println(line);
-                            }
-                        } catch (IOException ioException) {
-                            ioException.printStackTrace();
-                        }
-                    }).start();
-
-                } catch (IOException ioException) {
-                    ioException.printStackTrace();
-                }
-            }
-
-        });
-        root.getChildren().add(button);
-
-        Button showResults = new Button("5分钟内结果集");
-        showResults.setLayoutX(960); // Adjust these according to your layout
-        showResults.setLayoutY(20); // Adjust these according to your layout
-
-// Generates a string representation of the map
-        showResults.setOnAction(e -> {
-            StringBuilder sb = new StringBuilder();
-            for (Iterator<Map.Entry<Long, PcmAnalyzeResultEnum>> it = timeBasedCache.entrySet().iterator(); it.hasNext(); ) {
-                Map.Entry<Long, PcmAnalyzeResultEnum> entry = it.next();
-                Long time = entry.getKey();
-                PcmAnalyzeResultEnum resultEnum = entry.getValue();
-
-                Instant instant = Instant.ofEpochMilli(time);
-                LocalDateTime localDateTime = LocalDateTime.ofInstant(instant, TimeZone.getTimeZone("Asia/Shanghai").toZoneId());
-                sb.append(localDateTime).append("----").append(resultEnum.getName()).append("\n");
-            }
-
-            // Create a TextArea for your dialog text
-            TextArea textArea = new TextArea(sb.toString());
-            textArea.setEditable(false);
-            textArea.setWrapText(true);
-            textArea.setMaxWidth(500); // Set the max width that you want
-
-            // Create new window (Stage)
-            Stage newWindow = new Stage();
-            newWindow.setTitle("5分钟内结果集");
-
-            // Create new scene with textArea as root
-            Scene scene = new Scene(textArea, 500, 400);
-
-            newWindow.setScene(scene);
-            newWindow.show();
-        });
-
-        root.getChildren().add(showResults);
-
-
-
-        // Draw axes
-        Line xAxis = new Line(50, 300, 1074, 300); // Shifted x axis to center
-        Line yAxis = new Line(50, 50, 50, 550);
-
-        // Create labels for axes
-        Text xLabel = new Text(1074, 320, "x-axis");
-        Text yLabel = new Text(20, 300, "0"); // Added '0' label
-        Text yMinLabel = new Text(20, 560, "-1");
-        Text yMaxLabel = new Text(20, 60, "1");
-
-        root.getChildren().addAll(xAxis, yAxis, xLabel, yLabel, yMinLabel, yMaxLabel);
-
-        // Draw x axis grid lines
-        for (int i = 70; i <= 1070; i += 20) {
-            Line gridLine = new Line(i, 50, i, 550);
-            gridLine.setStroke(Color.GRAY);
-            root.getChildren().add(gridLine);
-        }
-
-        // Draw y axis grid lines
-        double yIncrement = (550 - 50) / 40;   // (yMax - yMin) / (1 / 0.05)
-        for (int i = 0; i <= 40; i++) {
-            Line gridLine = new Line(50, 50 + i * yIncrement, 1074, 50 + i * yIncrement);
-            gridLine.setStroke(Color.GRAY);
-            root.getChildren().add(gridLine);
-        }
-
-        Scene scene = new Scene(root);
-
-        primaryStage.setTitle("Real Time Line Graph");
-        primaryStage.setScene(scene);
-        primaryStage.show();
-    }
-
 
     private void freshStatistic(
             TextField totalCount,
@@ -677,31 +422,138 @@ public class FfmpegDecoder2Realtime extends Application implements Runnable {
 
         gc.stroke();
     }
+
+    public static void sendAudioToEngine(byte[] pcmData){
+        double[] audioData = applyHammingWindow(pcmData);
+
+
+        double[] tempData = Arrays.copyOfRange(audioData, 0, audioData.length);
+//        tempData = smooth(tempData, 10);
+
+//        if (hasDCBias(audioData)) {
+//            audioData = removeDCBias(audioData);
+//        }
+
+        AudioFFT audioFFT = new AudioFFT(audioData);
+        audioFFT.fft();
+        double[] fftData = audioFFT.getFFTData();
+//        double[] amplitude = audioFFT.getFFTAmplitude4SampleSize();
+
+
+        fftSize = fftData.length / 2;
+        magnitudes = new double[fftSize];
+        frequencies = new double[fftSize];
+
+// DC component
+        magnitudes[0] = Math.abs(fftData[0]);
+        double frequency = 0;  // 频率为0的幅度
+        frequencies[0] = frequency;
+//        System.out.println("Frequency: " + frequency + " Hz, Magnitude: " + magnitudes[0]);
+
+// Nyquist component
+        if (fftData.length % 2 == 0) {
+            magnitudes[fftSize - 1] = Math.abs(fftData[1]);
+            frequency = sampleRate / 2;  // Nyquist频率的幅度
+            frequencies[fftSize - 1] = frequency;
+//            System.out.println("Frequency: " + frequency + " Hz, Magnitude: " + magnitudes[fftSize - 1]);
+        }
+
+// Other frequencies
+        for (int i = 1; i < fftSize - 1; i++) {
+            magnitudes[i] = Math.hypot(fftData[2 * i], fftData[2 * i + 1]);
+            frequency = i * sampleRate / (2.0 * fftSize);  // 显示当前频率（Hz）
+            frequencies[i] = frequency;
+//            System.out.println("Frequency: " + frequency + " Hz, Magnitude: " + magnitudes[i]);
+        }
+
+
+//        tempData = normalizeFFTData(tempData);
+//        amplitude = audioFFT.normalizeAmplitude(amplitude);
+
+//        amplitude = meanFilter(amplitude, 3);
+
+//        amplitude = compress(amplitude, 10);
+
+//        amplitude = smooth(amplitude, 30);
+
+//        double[] tempData = Arrays.copyOfRange(amplitude, 10, 70);
+//        double[] tempData = Arrays.copyOfRange(amplitude, 0, amplitude.length);
+
+//        if (containsNaN(tempData)) {
+//            return;
+//        }
+//
+//        oldData = data;
+//
+//        data = tempData;
+    }
+
     public static void sendAudioDataToAudioEngine(byte[] pcmData) {
 //        processPCMData(pcmData, 4000, 1 / 48000.0);
+//
+//        byte[] pcmNewData = new byte[pcmData.length];
+//        pcmNewData = Arrays.copyOfRange(pcmData, 0, pcmData.length);
+//        if (pcmList.size() < 25){
+//            pcmList.add(pcmNewData);
+//            return;
+//        }else {
+//            pcmList.add(pcmNewData);
+//            pcmList.remove(0);
+//        }
+//
+//        for (int j = 0; j < pcmList.size() - 1; j++) {
+//            byte[] pcm1 = pcmList.get(j);
+//            byte[] pcm2 = pcmList.get(j+1);
+//
+//            // 假设pcm数据是16位的，每个样本2字节
+//            int numSamples = pcm1.length / 2;
+//
+//            double diff = 0;
+//            for (int i = 0; i < numSamples; i++) {
+//                // 转换成16位的整数
+//                short sample1 = (short) ((pcm1[2*i] & 0xFF) | (pcm1[2*i+1] << 8));
+//                short sample2 = (short) ((pcm2[2*i] & 0xFF) | (pcm2[2*i+1] << 8));
+//
+//                // 计数差异值
+//                diff += Math.pow(sample1 - sample2, 2);
+//            }
+//
+//            // 计算欧氏距离
+//            diff = Math.sqrt(diff / numSamples);
+//
+//            // 放入结果列表
+//            diffList.add(diff);
+//        }
+//
+//
+//
+//        System.out.println(diffList);
+//
+//        diffList.clear();
+
         double[] audioData = applyHammingWindow(pcmData);
 
         double[] tempData = Arrays.copyOfRange(audioData, 0, audioData.length);
-        double bigDropCount = countLargeDropWindows(tempData, 5, 0.1);
-        if (bigDropCount > 500){
-            return;
-        }
+//        double bigDropCount = countLargeDropWindows(tempData, 5, 0.1);
+//        if (bigDropCount > 500){
+//            return;
+//        }
 
         if (containsNaN(tempData)) {
             return;
         }
 
-//       tempData = meanFilter(tempData, 15);
-
-//        oldData = data;
+       tempData = meanFilter(tempData, 15);
+//
+        oldData = data;
         data = tempData;
-//        double rmse = calculateRMSE(oldData, data);
-
-
-        int largeDrop = countLargeDropWindows(tempData, 15, 0.1);
+        double rmse = calculateRMSE(oldData, data);
+//
+//
+//        int largeDrop = countLargeDropWindows(tempData, 15, 0.1);
         if (largeDropCountsIndex < largeDropCounts.length) {
-            largeDropCounts[largeDropCountsIndex] = largeDrop;
-//            RMSEs[largeDropCountsIndex] = rmse;
+//            largeDropCounts[largeDropCountsIndex] = largeDrop;
+            RMSEs[largeDropCountsIndex] = rmse;
 
             largeDropCountsIndex++;
             return;
@@ -709,11 +561,11 @@ public class FfmpegDecoder2Realtime extends Application implements Runnable {
 
         largeDropCountsIndex = 0;
 
-        System.out.println("largeDropCounts = " + Arrays.toString(largeDropCounts));
-//        System.out.println("RMSEs = " + Arrays.toString(RMSEs));
+//        System.out.println("largeDropCounts = " + Arrays.toString(largeDropCounts));
+        System.out.println("RMSEs = " + Arrays.toString(RMSEs));
 
 
-        countSoundTypes(largeDropCounts);
+//        countSoundTypes(largeDropCounts);
     }
 
 
@@ -885,33 +737,50 @@ public class FfmpegDecoder2Realtime extends Application implements Runnable {
         }
 
 
+        double zeroPercent = 0;
+        double zeroToOneHundredPercent = 0;
+        double zeroToThreeHundredPercent = 0;
+        double threeHundredToFiveHundredPercent = 0;
+        double overOneHundredAndEightyPercent = 0;
+        double overOneHundredPercent = 0;
+        double zeroToFiftyPercent = 0;
+
+        int length = largeDropCounts.length;
+        zeroPercent = zeroCount  * 1.0/ length;
+        zeroToFiftyPercent = zeroToFiftyCount  * 1.0/ length;
+        zeroToOneHundredPercent = zeroToOneHundredCount  * 1.0/ length;
+        zeroToThreeHundredPercent = zeroToThreeHundredCount  * 1.0/ length;
+        threeHundredToFiveHundredPercent = threeHundredToFiveHundredCount  * 1.0/ length;
+        overOneHundredAndEightyPercent = overOneHundredAndEightyCount  * 1.0/ length;
+        overOneHundredPercent = overOneHundredCount * 1.0/ length;
+
         long time = System.currentTimeMillis();
-        if (zeroCount >= 23 || zeroToOneHundredCount >= 20){
+        if (zeroPercent >= 0.95 || zeroToFiftyPercent >= 0.99){
             System.out.println("静音或轻微白噪声");
             result = LocalDateTime.now() + "-----静音或轻微白噪声";
             timeBasedCache.put(time, MUTE_OR_LIGHT_WHITE_NOISE);
             return;
         }
-        if (zeroCount >= 8 && zeroToOneHundredCount > 0 && overOneHundredCount < 3){
+        if (zeroPercent >= 0.3 && zeroToOneHundredPercent > 0 && overOneHundredPercent < 0.125){
             System.out.println("少量人声");
             result = LocalDateTime.now() + "-----少量人声";
             timeBasedCache.put(time, LITTLE_HUMAN_VOICE);
             return;
         }
-        if (zeroToOneHundredCount > 14 &&  serialZeroCount > 0){
+        if (zeroToThreeHundredPercent > 0.6){
             System.out.println("人声");
             result = LocalDateTime.now() + "-----人声";
             timeBasedCache.put(time, SPEAK_VOICE);
             return;
         }
-        if (overOneHundredAndEightyCount >= 20){
+        if (overOneHundredAndEightyPercent >= 0.95){
             System.out.println("强烈白噪声");
             result = LocalDateTime.now() + "-----强烈白噪声";
             timeBasedCache.put(time, STRONG_WHITE_NOISE);
             return;
         }
-        System.out.println("强烈白噪声");
-        result = LocalDateTime.now() + "-----强烈白噪声";
+        System.out.println("音乐");
+        result = LocalDateTime.now() + "-----音乐";
         timeBasedCache.put(time, STRONG_WHITE_NOISE);
 
     }
